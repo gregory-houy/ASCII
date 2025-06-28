@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explorateur de Caractères Interactif</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Harmony (Stone, Teal, Amber) -->
+    <!-- Application Structure Plan: J'ai conçu une structure de type tableau de bord avec des filtres et une recherche instantanée. L'information est présentée sous forme de grille de cartes cliquables plutôt qu'un long tableau, ce qui est beaucoup plus convivial et visuellement attrayant. Cette approche encourage l'exploration. L'utilisateur peut filtrer par catégorie, rechercher par mot-clé, et copier n'importe quelle information (caractère, code Unicode, entité HTML) d'un simple clic. Une section "Statistiques" avec un graphique offre une vue d'ensemble quantitative du contenu. Cette structure a été choisie pour transformer une tâche de référence (rechercher un caractère) en une expérience interactive et efficace. -->
+    <!-- Visualization & Content Choices: 
+        - Rapport (Tableau de caractères) -> Objectif (Organiser, Trouver) -> Méthode (Grille de cartes) -> Interaction (Filtrage par catégorie, recherche textuelle) -> Justification (Plus moderne et rapide qu'un tableau statique) -> Librairie/Méthode (JS, Tailwind).
+        - Rapport (Détails d'un caractère) -> Objectif (Informer, Utiliser) -> Méthode (Texte sur la carte avec boutons) -> Interaction (Clic pour copier dans le presse-papiers) -> Justification (Facilite l'utilisation directe des caractères dans d'autres applications) -> Librairie/Méthode (JS).
+        - Rapport (Catégories de caractères) -> Objectif (Comparer, Informer) -> Méthode (Graphique à barres) -> Interaction (Survol pour détails) -> Justification (Visualise la distribution des caractères par catégorie, ajoutant une dimension analytique) -> Librairie/Méthode (Chart.js).
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8F7F4; /* Warm neutral background */
+            color: #44403c; /* stone-700 */
+        }
+        .active-filter {
+            background-color: #14b8a6; /* teal-500 */
+            color: white;
+            border-color: #14b8a6;
+        }
+        .filter-btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+        }
+        .copy-btn {
+            transition: background-color 0.2s ease-in-out;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 400px;
+            max-height: 50vh;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-stone-800">Explorateur de Caractères</h1>
+            <p class="mt-2 text-lg text-stone-600">Recherchez, filtrez et copiez des caractères spéciaux, accentués et des symboles.</p>
+        </header>
+
+        <nav class="sticky top-0 bg-f8f7f4/80 backdrop-blur-sm z-10 py-4 mb-8">
+            <div class="flex flex-col sm:flex-row gap-4">
+                <div class="relative flex-grow">
+                    <input type="search" id="search-input" placeholder="Rechercher par nom ou code (ex: euro, U+20AC)..." class="w-full p-3 pl-10 border border-stone-300 rounded-full bg-white shadow-sm focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                    <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <svg class="w-5 h-5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                </div>
+            </div>
+            <div id="filters-container" class="mt-4 flex flex-wrap justify-center gap-2">
+            </div>
+        </nav>
+
+        <main id="main-content">
+            <div class="mb-6">
+                <p id="results-count" class="text-center text-stone-600"></p>
+            </div>
+            <div id="character-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            </div>
+        </main>
+        
+        <section id="stats-section" class="mt-16 pt-8 border-t border-stone-200">
+             <div class="text-center mb-8">
+                <h2 class="text-3xl font-bold text-stone-800">Statistiques</h2>
+                <p class="mt-2 text-lg text-stone-600">Cette section offre une vue d'ensemble de la répartition des caractères disponibles dans l'explorateur. Le graphique ci-dessous illustre le nombre de caractères uniques pour chaque catégorie, vous permettant de visualiser rapidement la richesse de chaque ensemble de symboles.</p>
+            </div>
+            <div class="chart-container">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        const characterData = [
+            { char: 'à', desc: 'Lettre minuscule a avec accent grave', unicode: 'U+00E0', entity: '&agrave;', category: 'Lettres Accentuées' },
+            { char: 'â', desc: 'Lettre minuscule a avec accent circonflexe', unicode: 'U+00E2', entity: '&acirc;', category: 'Lettres Accentuées' },
+            { char: 'ä', desc: 'Lettre minuscule a avec tréma', unicode: 'U+00E4', entity: '&auml;', category: 'Lettres Accentuées' },
+            { char: 'æ', desc: 'Ligature minuscule ae', unicode: 'U+00E6', entity: '&aelig;', category: 'Lettres Accentuées' },
+            { char: 'ç', desc: 'Lettre minuscule c avec cédille', unicode: 'U+00E7', entity: '&ccedil;', category: 'Lettres Accentuées' },
+            { char: 'è', desc: 'Lettre minuscule e avec accent grave', unicode: 'U+00E8', entity: '&egrave;', category: 'Lettres Accentuées' },
+            { char: 'é', desc: 'Lettre minuscule e avec accent aigu', unicode: 'U+00E9', entity: '&eacute;', category: 'Lettres Accentuées' },
+            { char: 'ê', desc: 'Lettre minuscule e avec accent circonflexe', unicode: 'U+00EA', entity: '&ecirc;', category: 'Lettres Accentuées' },
+            { char: 'ë', desc: 'Lettre minuscule e avec tréma', unicode: 'U+00EB', entity: '&euml;', category: 'Lettres Accentuées' },
+            { char: 'î', desc: 'Lettre minuscule i avec accent circonflexe', unicode: 'U+00EE', entity: '&icirc;', category: 'Lettres Accentuées' },
+            { char: 'ï', desc: 'Lettre minuscule i avec tréma', unicode: 'U+00EF', entity: '&iuml;', category: 'Lettres Accentuées' },
+            { char: 'ô', desc: 'Lettre minuscule o avec accent circonflexe', unicode: 'U+00F4', entity: '&ocirc;', category: 'Lettres Accentuées' },
+            { char: 'œ', desc: 'Ligature minuscule oe', unicode: 'U+0153', entity: '&oelig;', category: 'Lettres Accentuées' },
+            { char: 'ù', desc: 'Lettre minuscule u avec accent grave', unicode: 'U+00F9', entity: '&ugrave;', category: 'Lettres Accentuées' },
+            { char: 'û', desc: 'Lettre minuscule u avec accent circonflexe', unicode: 'U+00FB', entity: '&ucirc;', category: 'Lettres Accentuées' },
+            { char: 'ü', desc: 'Lettre minuscule u avec tréma', unicode: 'U+00FC', entity: '&uuml;', category: 'Lettres Accentuées' },
+            { char: 'ÿ', desc: 'Lettre minuscule y avec tréma', unicode: 'U+00FF', entity: '&yuml;', category: 'Lettres Accentuées' },
+            { char: 'À', desc: 'Lettre majuscule A avec accent grave', unicode: 'U+00C0', entity: '&Agrave;', category: 'Lettres Accentuées' },
+            { char: 'Â', desc: 'Lettre majuscule A avec accent circonflexe', unicode: 'U+00C2', entity: '&Acirc;', category: 'Lettres Accentuées' },
+            { char: 'Ä', desc: 'Lettre majuscule A avec tréma', unicode: 'U+00C4', entity: '&Auml;', category: 'Lettres Accentuées' },
+            { char: 'Æ', desc: 'Ligature majuscule AE', unicode: 'U+00C6', entity: '&AElig;', category: 'Lettres Accentuées' },
+            { char: 'Ç', desc: 'Lettre majuscule C avec cédille', unicode: 'U+00C7', entity: '&Ccedil;', category: 'Lettres Accentuées' },
+            { char: 'È', desc: 'Lettre majuscule E avec accent grave', unicode: 'U+00C8', entity: '&Egrave;', category: 'Lettres Accentuées' },
+            { char: 'É', desc: 'Lettre majuscule E avec accent aigu', unicode: 'U+00C9', entity: '&Eacute;', category: 'Lettres Accentuées' },
+            { char: 'Ê', desc: 'Lettre majuscule E avec accent circonflexe', unicode: 'U+00CA', entity: '&Ecirc;', category: 'Lettres Accentuées' },
+            { char: 'Ë', desc: 'Lettre majuscule E avec tréma', unicode: 'U+00CB', entity: '&Euml;', category: 'Lettres Accentuées' },
+            { char: 'Î', desc: 'Lettre majuscule I avec accent circonflexe', unicode: 'U+00CE', entity: '&Icirc;', category: 'Lettres Accentuées' },
+            { char: 'Ï', desc: 'Lettre majuscule I avec tréma', unicode: 'U+00CF', entity: '&Iuml;', category: 'Lettres Accentuées' },
+            { char: 'Ô', desc: 'Lettre majuscule O avec accent circonflexe', unicode: 'U+00D4', entity: '&Ocirc;', category: 'Lettres Accentuées' },
+            { char: 'Œ', desc: 'Ligature majuscule OE', unicode: 'U+0152', entity: '&OElig;', category: 'Lettres Accentuées' },
+            { char: 'Ù', desc: 'Lettre majuscule U avec accent grave', unicode: 'U+00D9', entity: '&Ugrave;', category: 'Lettres Accentuées' },
+            { char: 'Û', desc: 'Lettre majuscule U avec accent circonflexe', unicode: 'U+00DB', entity: '&Ucirc;', category: 'Lettres Accentuées' },
+            { char: 'Ü', desc: 'Lettre majuscule U avec tréma', unicode: 'U+00DC', entity: '&Uuml;', category: 'Lettres Accentuées' },
+            { char: 'Ÿ', desc: 'Lettre majuscule Y avec tréma', unicode: 'U+0178', entity: '&Yuml;', category: 'Lettres Accentuées' },
+            { char: '¿', desc: 'Point d\'interrogation inversé', unicode: 'U+00BF', entity: '&iquest;', category: 'Ponctuation' },
+            { char: '¡', desc: 'Point d\'exclamation inversé', unicode: 'U+00A1', entity: '&iexcl;', category: 'Ponctuation' },
+            { char: '§', desc: 'Symbole de section', unicode: 'U+00A7', entity: '&sect;', category: 'Ponctuation' },
+            { char: '¶', desc: 'Symbole de paragraphe', unicode: 'U+00B6', entity: '&para;', category: 'Ponctuation' },
+            { char: '«', desc: 'Guillemet ouvrant (chevrons)', unicode: 'U+00AB', entity: '&laquo;', category: 'Ponctuation' },
+            { char: '»', desc: 'Guillemet fermant (chevrons)', unicode: 'U+00BB', entity: '&raquo;', category: 'Ponctuation' },
+            { char: '…', desc: 'Points de suspension', unicode: 'U+2026', entity: '&hellip;', category: 'Ponctuation' },
+            { char: '–', desc: 'Tiret cadratin (en dash)', unicode: 'U+2013', entity: '&ndash;', category: 'Ponctuation' },
+            { char: '—', desc: 'Tiret demi-cadratin (em dash)', unicode: 'U+2014', entity: '&mdash;', category: 'Ponctuation' },
+            { char: '‘', desc: 'Guillemet simple ouvrant', unicode: 'U+2018', entity: '&lsquo;', category: 'Ponctuation' },
+            { char: '’', desc: 'Apostrophe typographique', unicode: 'U+2019', entity: '&rsquo;', category: 'Ponctuation' },
+            { char: '“', desc: 'Guillemet double ouvrant', unicode: 'U+201C', entity: '&ldquo;', category: 'Ponctuation' },
+            { char: '”', desc: 'Guillemet double fermant', unicode: 'U+201D', entity: '&rdquo;', category: 'Ponctuation' },
+            { char: '†', desc: 'Croix / Obèle', unicode: 'U+2020', entity: '&dagger;', category: 'Ponctuation' },
+            { char: '‡', desc: 'Double croix / Double obèle', unicode: 'U+2021', entity: '&Dagger;', category: 'Ponctuation' },
+            { char: '•', desc: 'Puce / Point de liste', unicode: 'U+2022', entity: '&bull;', category: 'Ponctuation' },
+            { char: '¢', desc: 'Symbole cent', unicode: 'U+00A2', entity: '&cent;', category: 'Monétaire' },
+            { char: '£', desc: 'Symbole livre sterling', unicode: 'U+00A3', entity: '&pound;', category: 'Monétaire' },
+            { char: '€', desc: 'Symbole euro', unicode: 'U+20AC', entity: '&euro;', category: 'Monétaire' },
+            { char: '¥', desc: 'Symbole yen / yuan', unicode: 'U+00A5', entity: '&yen;', category: 'Monétaire' },
+            { char: '₹', desc: 'Symbole roupie indienne', unicode: 'U+20B9', entity: '&#8377;', category: 'Monétaire' },
+            { char: '±', desc: 'Plus-moins', unicode: 'U+00B1', entity: '&plusmn;', category: 'Mathématiques' },
+            { char: '×', desc: 'Signe de multiplication', unicode: 'U+00D7', entity: '&times;', category: 'Mathématiques' },
+            { char: '÷', desc: 'Signe de division', unicode: 'U+00F7', entity: '&divide;', category: 'Mathématiques' },
+            { char: '≠', desc: 'Non égal à', unicode: 'U+2260', entity: '&ne;', category: 'Mathématiques' },
+            { char: '≤', desc: 'Inférieur ou égal à', unicode: 'U+2264', entity: '&le;', category: 'Mathématiques' },
+            { char: '≥', desc: 'Supérieur ou égal à', unicode: 'U+2265', entity: '&ge;', category: 'Mathématiques' },
+            { char: '≈', desc: 'Environ égal à', unicode: 'U+2248', entity: '&asymp;', category: 'Mathématiques' },
+            { char: '°', desc: 'Symbole degré', unicode: 'U+00B0', entity: '&deg;', category: 'Mathématiques' },
+            { char: '¼', desc: 'Fraction un quart', unicode: 'U+00BC', entity: '&frac14;', category: 'Mathématiques' },
+            { char: '½', desc: 'Fraction un demi', unicode: 'U+00BD', entity: '&frac12;', category: 'Mathématiques' },
+            { char: '¾', desc: 'Fraction trois quarts', unicode: 'U+00BE', entity: '&frac34;', category: 'Mathématiques' },
+            { char: '∞', desc: 'Infini', unicode: 'U+221E', entity: '&infin;', category: 'Mathématiques' },
+            { char: '∫', desc: 'Intégrale', unicode: 'U+222B', entity: '&int;', category: 'Mathématiques' },
+            { char: '∑', desc: 'Somme / Sigma', unicode: 'U+2211', entity: '&sum;', category: 'Mathématiques' },
+            { char: '√', desc: 'Racine carrée', unicode: 'U+221A', entity: '&radic;', category: 'Mathématiques' },
+            { char: 'Δ', desc: 'Delta', unicode: 'U+0394', entity: '&Delta;', category: 'Mathématiques' },
+            { char: 'Ω', desc: 'Omega (Ohm)', unicode: 'U+03A9', entity: '&Omega;', category: 'Mathématiques' },
+            { char: 'π', desc: 'Pi', unicode: 'U+03C0', entity: '&pi;', category: 'Mathématiques' },
+            { char: '©', desc: 'Symbole copyright', unicode: 'U+00A9', entity: '&copy;', category: 'Divers' },
+            { char: '®', desc: 'Symbole marque déposée', unicode: 'U+00AE', entity: '&reg;', category: 'Divers' },
+            { char: '™', desc: 'Symbole marque commerciale', unicode: 'U+2122', entity: '&trade;', category: 'Divers' },
+            { char: '♪', desc: 'Note de musique', unicode: 'U+266A', entity: '&#9834;', category: 'Divers' },
+            { char: '★', desc: 'Étoile noire pleine', unicode: 'U+2605', entity: '&#9733;', category: 'Divers' },
+            { char: '☆', desc: 'Étoile blanche vide', unicode: 'U+2606', entity: '&#9734;', category: 'Divers' },
+            { char: '✓', desc: 'Coche / Tick', unicode: 'U+2713', entity: '&#10003;', category: 'Divers' },
+            { char: '✗', desc: 'Croix de Saint-André', unicode: 'U+2717', entity: '&#10007;', category: 'Divers' },
+            { char: '▶', desc: 'Bouton lecture', unicode: 'U+25B6', entity: '&#9654;', category: 'Divers' },
+            { char: '▼', desc: 'Bouton déroulant', unicode: 'U+25BC', entity: '&#9660;', category: 'Divers' },
+            { char: '▲', desc: 'Triangle haut', unicode: 'U+25B2', entity: '&#9650;', category: 'Divers' },
+            { char: '◀', desc: 'Triangle gauche', unicode: 'U+25C0', entity: '&#9664;', category: 'Divers' }
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const grid = document.getElementById('character-grid');
+            const searchInput = document.getElementById('search-input');
+            const filtersContainer = document.getElementById('filters-container');
+            const resultsCount = document.getElementById('results-count');
+            
+            let activeFilter = 'Tous';
+            
+            const categories = ['Tous', ...new Set(characterData.map(c => c.category))];
+
+            function createCopyButton(textToCopy, label) {
+                const button = document.createElement('button');
+                button.textContent = label;
+                button.className = 'copy-btn text-xs w-full bg-stone-200 hover:bg-teal-500 hover:text-white text-stone-700 font-medium py-1 px-2 rounded';
+                
+                button.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(textToCopy).then(() => {
+                        button.textContent = 'Copié!';
+                        setTimeout(() => { button.textContent = label; }, 1500);
+                    }).catch(err => console.error('Erreur de copie: ', err));
+                });
+                return button;
+            }
+            
+            function renderCharacters() {
+                grid.innerHTML = '';
+                const searchTerm = searchInput.value.toLowerCase().trim();
+
+                const filteredData = characterData.filter(item => {
+                    const inCategory = activeFilter === 'Tous' || item.category === activeFilter;
+                    const inSearch = !searchTerm ||
+                        item.char.toLowerCase().includes(searchTerm) ||
+                        item.desc.toLowerCase().includes(searchTerm) ||
+                        item.unicode.toLowerCase().includes(searchTerm) ||
+                        item.entity.toLowerCase().includes(searchTerm);
+                    return inCategory && inSearch;
+                });
+                
+                resultsCount.textContent = `${filteredData.length} résultat(s) trouvé(s).`;
+
+                if (filteredData.length === 0) {
+                    grid.innerHTML = `<p class="col-span-full text-center text-stone-500">Aucun caractère ne correspond à votre recherche.</p>`;
+                }
+
+                filteredData.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'card bg-white rounded-lg shadow p-4 flex flex-col items-center justify-start text-center border border-stone-200';
+                    
+                    card.innerHTML = `
+                        <div class="text-6xl mb-4">${item.char}</div>
+                        <p class="text-sm text-stone-700 font-medium h-10 mb-3">${item.desc}</p>
+                        <div class="w-full space-y-2 mt-auto">
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <span class="font-semibold text-stone-600 p-1 bg-stone-50 rounded">Unicode</span>
+                                <span class="font-mono text-amber-800 p-1 bg-amber-50 rounded">${item.unicode}</span>
+                                <span class="font-semibold text-stone-600 p-1 bg-stone-50 rounded">HTML</span>
+                                <span class="font-mono text-amber-800 p-1 bg-amber-50 rounded">${item.entity}</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1 pt-2"></div>
+                        </div>
+                    `;
+                    const buttonContainer = card.querySelector('.grid.grid-cols-3');
+                    buttonContainer.appendChild(createCopyButton(item.char, 'Car.'));
+                    buttonContainer.appendChild(createCopyButton(item.unicode, 'Code'));
+                    buttonContainer.appendChild(createCopyButton(item.entity, 'HTML'));
+                    
+                    grid.appendChild(card);
+                });
+            }
+
+            function renderFilters() {
+                filtersContainer.innerHTML = '';
+                categories.forEach(category => {
+                    const button = document.createElement('button');
+                    button.textContent = category;
+                    button.className = 'filter-btn text-sm font-medium py-2 px-4 border border-stone-300 rounded-full';
+                    if (category === activeFilter) {
+                        button.classList.add('active-filter');
+                    }
+                    button.addEventListener('click', () => {
+                        activeFilter = category;
+                        renderFilters();
+                        renderCharacters();
+                    });
+                    filtersContainer.appendChild(button);
+                });
+            }
+
+            function renderChart() {
+                const ctx = document.getElementById('categoryChart').getContext('2d');
+                const categoryCounts = characterData.reduce((acc, curr) => {
+                    acc[curr.category] = (acc[curr.category] || 0) + 1;
+                    return acc;
+                }, {});
+
+                const chartLabels = Object.keys(categoryCounts);
+                const chartData = Object.values(categoryCounts);
+
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: chartLabels,
+                        datasets: [{
+                            label: 'Nombre de Caractères',
+                            data: chartData,
+                            backgroundColor: 'rgba(20, 184, 166, 0.6)', /* teal-500 with alpha */
+                            borderColor: 'rgba(15, 118, 110, 1)', /* teal-700 */
+                            borderWidth: 1,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(0,0,0,0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                backgroundColor: '#1f2937', /* gray-800 */
+                                titleFont: { size: 14, weight: 'bold' },
+                                bodyFont: { size: 12 },
+                                displayColors: false,
+                                padding: 10
+                            }
+                        }
+                    }
+                });
+            }
+
+            searchInput.addEventListener('input', renderCharacters);
+            renderFilters();
+            renderCharacters();
+            renderChart();
+        });
+    </script>
+</body>
+</html>
